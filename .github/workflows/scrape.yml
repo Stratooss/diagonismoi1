@@ -1,0 +1,35 @@
+name: Radio Scraper
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # Τρέχει κάθε 30 λεπτά
+  workflow_dispatch:       # Επιτρέπει να το τρέξεις χειροκίνητα τώρα
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:           # Δίνουμε δικαίωμα να γράφει στο repo
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Scraper
+        run: python scraper.py
+
+      - name: Commit and Push if changes
+        run: |
+          git config --global user.name "ScraperBot"
+          git config --global user.email "bot@github.com"
+          git add contests.json
+          # Κάνει commit μόνο αν άλλαξε κάτι στο αρχείο
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update contests" && git push)
