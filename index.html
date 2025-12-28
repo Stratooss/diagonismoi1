@@ -5,41 +5,127 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Radio Hunter 🎯</title>
     <style>
-        body { font-family: sans-serif; background-color: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
-        h1 { text-align: center; color: #4caf50; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 15px;
+        }
+        h1 { text-align: center; color: #4caf50; margin-bottom: 5px; }
         .info { text-align: center; font-size: 12px; color: #888; margin-bottom: 20px; }
-        .card { background-color: #1e1e1e; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #4caf50; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
-        h2 { font-size: 16px; margin: 0 0 10px 0; }
-        .btn { display: block; width: 100%; padding: 10px 0; background-color: #4caf50; color: white; text-align: center; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;}
-        .source { font-size: 11px; color: #aaa; }
+        
+        .card {
+            background-color: #1e1e1e;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Border colors based on opportunity */
+        .card.low { border-left: 5px solid #00c853; } /* Πράσινο - Σούπερ Ευκαιρία */
+        .card.medium { border-left: 5px solid #ffab00; } /* Κίτρινο */
+        .card.high { border-left: 5px solid #ff3d00; } /* Κόκκινο - Δύσκολο */
+
+        .header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px; }
+        
+        .badge {
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .badge.low { background-color: rgba(0, 200, 83, 0.2); color: #00c853; }
+        .badge.high { background-color: rgba(255, 61, 0, 0.2); color: #ff3d00; }
+        .badge.medium { background-color: rgba(255, 171, 0, 0.2); color: #ffab00; }
+
+        h2 { font-size: 16px; margin: 0; line-height: 1.4; flex: 1; margin-right: 10px; }
+        
+        .meta { font-size: 12px; color: #aaa; margin-bottom: 15px; display: flex; flex-direction: column; gap: 5px;}
+        .meta i { width: 15px; display: inline-block; text-align: center; }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 0;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 13px;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+        .btn:active { opacity: 0.7; }
+
+        .btn-info { background-color: #2196f3; color: white; } /* Μπλε */
+        .btn-live { background-color: #f44336; color: white; } /* Κόκκινο */
+
     </style>
 </head>
 <body>
     <h1>Radio Hunter 🎯</h1>
-    <div class="info" id="last-update">Φόρτωση...</div>
+    <div class="info" id="last-update">Φόρτωση δεδομένων...</div>
     <div id="list"></div>
 
     <script>
-        fetch('./contests.json?nocache=' + (new Date()).getTime())
+        // Προσθέτουμε timestamp για να μην κρατάει cache το κινητό
+        fetch('./contests.json?t=' + new Date().getTime())
         .then(res => res.json())
         .then(data => {
             const list = document.getElementById('list');
+            
             if(data.length > 0) {
-                document.getElementById('last-update').innerText = 'Τελευταία ενημέρωση: ' + data[0].found_at;
+                document.getElementById('last-update').innerText = 'Τελευταία σάρωση: ' + data[0].found_at;
+                
                 data.forEach(item => {
+                    // Καθορισμός κειμένου για το Badge
+                    let audienceText = "🔥 ΕΥΚΑΙΡΙΑ (Λίγοι Ακροατές)";
+                    if(item.audience === 'high') audienceText = "⚠️ Μεγάλος Ανταγωνισμός";
+                    if(item.audience === 'medium') audienceText = "⚖️ Μέτρια Ακροαματικότητα";
+
+                    // Δημιουργία HTML Κάρτας
                     list.innerHTML += `
-                        <div class="card">
-                            <h2>${item.title}</h2>
-                            <div class="source">📡 Πηγή: ${new URL(item.source).hostname}</div>
-                            <a href="${item.link}" target="_blank" class="btn">ΔΕΣ ΤΟ</a>
+                        <div class="card ${item.audience}">
+                            <div class="header">
+                                <h2>${item.title}</h2>
+                                <span class="badge ${item.audience}">${item.audience.toUpperCase()}</span>
+                            </div>
+                            
+                            <div class="meta">
+                                <div>📡 <b>Σταθμός:</b> ${item.source_name}</div>
+                                <div>📊 <b>Status:</b> ${audienceText}</div>
+                                <div>⏰ <b>Ώρα:</b> ${item.schedule || 'Δες λεπτομέρειες'}</div>
+                            </div>
+
+                            <div class="actions">
+                                <a href="${item.link}" target="_blank" class="btn btn-info">
+                                    📝 ΟΡΟΙ & INFO
+                                </a>
+                                <a href="${item.live_url}" target="_blank" class="btn btn-live">
+                                    🔴 ΑΚΟΥ LIVE
+                                </a>
+                            </div>
                         </div>`;
                 });
             } else {
-                list.innerHTML = '<p style="text-align:center">Δεν βρέθηκαν διαγωνισμοί.</p>';
+                list.innerHTML = '<p style="text-align:center">Δεν βρέθηκαν ενεργοί διαγωνισμοί.</p>';
             }
         })
         .catch(err => {
-            document.getElementById('list').innerHTML = '<p style="text-align:center; color:red">Αναμονή για το πρώτο scan...</p>';
+            document.getElementById('list').innerHTML = '<p style="text-align:center; color:red">Πρόβλημα στη φόρτωση.<br>Βεβαιώσου ότι το Scraper έτρεξε.</p>';
+            console.error(err);
         });
     </script>
 </body>
