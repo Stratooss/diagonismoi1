@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radio Hunter 🎯</title>
+    <style>
+        body { font-family: sans-serif; background-color: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
+        h1 { text-align: center; color: #4caf50; }
+        .info { text-align: center; font-size: 12px; color: #888; margin-bottom: 20px; }
+        .card { background-color: #1e1e1e; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #4caf50; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+        h2 { font-size: 16px; margin: 0 0 10px 0; }
+        .btn { display: block; width: 100%; padding: 10px 0; background-color: #4caf50; color: white; text-align: center; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 10px;}
+        .source { font-size: 11px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <h1>Radio Hunter 🎯</h1>
+    <div class="info" id="last-update">Φόρτωση...</div>
+    <div id="list"></div>
+
+    <script>
+        fetch('./contests.json?nocache=' + (new Date()).getTime())
+        .then(res => res.json())
+        .then(data => {
+            const list = document.getElementById('list');
+            if(data.length > 0) {
+                document.getElementById('last-update').innerText = 'Τελευταία ενημέρωση: ' + data[0].found_at;
+                data.forEach(item => {
+                    list.innerHTML += `
+                        <div class="card">
+                            <h2>${item.title}</h2>
+                            <div class="source">📡 Πηγή: ${new URL(item.source).hostname}</div>
+                            <a href="${item.link}" target="_blank" class="btn">ΔΕΣ ΤΟ</a>
+                        </div>`;
+                });
+            } else {
+                list.innerHTML = '<p style="text-align:center">Δεν βρέθηκαν διαγωνισμοί.</p>';
+            }
+        })
+        .catch(err => {
+            document.getElementById('list').innerHTML = '<p style="text-align:center; color:red">Αναμονή για το πρώτο scan...</p>';
+        });
+    </script>
+</body>
+</html>
