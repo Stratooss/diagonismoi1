@@ -4,14 +4,16 @@ import feedparser
 import json
 import datetime
 from time import mktime
+import re
 
-# --- ΛΙΣΤΑ ΣΤΟΧΩΝ (STRICT CATEGORY FEEDS) ---
-# Αλλάξαμε τα URLS για να δείχνουν ΜΟΝΟ την κατηγορία διαγωνισμών
+# --- ΡΥΘΜΙΣΕΙΣ ---
+MAX_DAYS_OLD = 7  # Πόσες μέρες θεωρείται "ενεργός" ένας διαγωνισμός;
+# (Στα ραδιόφωνα συνήθως κρατάνε 3-5 μέρες, οπότε το 7 είναι ασφαλές όριο)
+
 SOURCES = [
     {
         "name": "Radio Polis 99.4 (Λάρισα)",
         "type": "rss",
-        # URL που δίνει ΜΟΝΟ διαγωνισμούς, όχι ειδήσεις
         "url": "https://www.radiopolis.gr/category/diagonismoi/feed/",
         "live_url": "http://live24.gr/radio/generic.jsp?sid=169",
         "audience": "low",
@@ -19,7 +21,7 @@ SOURCES = [
     },
     {
         "name": "Fly FM 89.7 (Σπάρτη)",
-        "type": "html", # Γυρίσαμε σε HTML για καλύτερο φιλτράρισμα εδώ
+        "type": "html",
         "url": "https://flynews.gr/category/fly-fm-897/",
         "live_url": "https://live24.gr/radio/generic.jsp?sid=792",
         "audience": "low",
@@ -59,53 +61,72 @@ SOURCES = [
     }
 ]
 
+def parse_date(entry):
+    """Βοηθητική συνάρτηση για να βρίσκουμε πότε ανέβηκε το άρθρο"""
+    try:
+        if hasattr(entry, 'published_parsed'):
+            return datetime.datetime.fromtimestamp(mktime(entry.published_parsed))
+        elif hasattr(entry, 'updated_parsed'):
+            return datetime.datetime.fromtimestamp(mktime(entry.updated_parsed))
+        else:
+            return datetime.datetime.now() # Αν δεν βρούμε ημερομηνία, υποθέτουμε τώρα
+    except:
+        return datetime.datetime.now()
+
 def scrape_contests():
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     all_contests = []
     
-    # --- ΦΙΛΤΡΑ (STRICT) ---
-    # Πρέπει ΟΠΩΣΔΗΠΟΤΕ να υπάρχει μια από αυτές τις λέξεις στον τίτλο
+    # Λέξεις που δείχνουν ότι ο διαγωνισμός είναι ενεργός
     required_keywords = ["κερδίστε", "διαγωνισμός", "κληρωση", "δωροεπιταγ", "προσκλησεις", "διημερο", "ταξιδι"]
     
-    # Λέξεις που πετάμε αμέσως (Ειδήσεις, Αποτελέσματα)
-    negative_keywords = ["νικητές", "έληξε", "αποτελέσματα", "συνέντευξη", "παρουσίαση", "κυκλοφορεί", "νέο τραγούδι", "είδηση", "καιρός", "πρόγραμμα", "live"]
+    # Λέξεις που δείχνουν λήξη ή άσχετο περιεχόμενο
+    negative_keywords = [
+        "νικητές", "έληξε", "αποτελέσματα", "κληρώθηκαν", "ολοκληρώθηκε", # Λήξη
+        "συνέντευξη", "παρουσίαση", "κυκλοφορεί", "νέο τραγούδι", "live", "πρόγραμμα" # Άσχετα
+    ]
 
-    print("--- Start Strict Scan ---")
+    now = datetime.datetime.now()
+    print(f"--- Start Scan: {now.strftime('%d/%m/%Y %H:%M')} ---")
 
     for station in SOURCES:
-        print(f"Scanning: {station['name']} ({station['type']})...")
-        
         try:
             items = []
             
-            # --- RSS LOGIC ---
+            # === RSS Logic (Με ακριβή ημερομηνία) ===
             if station['type'] == 'rss':
                 feed = feedparser.parse(station['url'])
-                for entry in feed.entries[:8]:
+                for entry in feed.entries[:10]:
+                    
+                    # 1. Έλεγχος Ημερομηνίας (Freshness Check)
+                    pub_date = parse_date(entry)
+                    days_diff = (now - pub_date).days
+                    
+                    # Αν είναι παλιότερο από το όριο, το προσπερνάμε (ΕΚΤΟΣ αν είναι pinned)
+                    if days_diff > MAX_DAYS_OLD:
+                        continue 
+
                     items.append({
                         'title': entry.title,
                         'link': entry.link,
-                        'date': datetime.datetime.fromtimestamp(mktime(entry.published_parsed)).strftime("%d/%m/%Y") if hasattr(entry, 'published_parsed') else "Πρόσφατο"
+                        'date_obj': pub_date,
+                        'date_str': pub_date.strftime("%d/%m/%Y")
                     })
 
-            # --- HTML SCRAPING LOGIC ---
+            # === HTML Logic (Υποθέτουμε ότι τα πάνω-πάνω είναι φρέσκα) ===
             elif station['type'] == 'html':
                 response = requests.get(station['url'], headers=headers, timeout=15)
                 response.encoding = response.apparent_encoding
                 soup = BeautifulSoup(response.text, 'html.parser')
                 
-                # Ψάχνουμε συνδέσμους μέσα σε τίτλους (h2, h3) ή άρθρα
-                elements = soup.find_all(['h2', 'h3', 'h4', 'a'], limit=50)
-                
+                elements = soup.find_all(['h2', 'h3', 'h4', 'a'], limit=40)
                 count = 0
+                
                 for el in elements:
-                    if count >= 5: break
+                    if count >= 4: break # Παίρνουμε μόνο τα 4 πρώτα (τα πιο πρόσφατα)
                     
-                    # Αν είναι Tag 'a', πάρε το κείμενο, αλλιώς ψάξε το 'a' μέσα του
-                    if el.name == 'a':
-                        link_tag = el
-                    else:
-                        link_tag = el.find('a')
+                    if el.name == 'a': link_tag = el
+                    else: link_tag = el.find('a')
                     
                     if not link_tag: continue
 
@@ -113,40 +134,46 @@ def scrape_contests():
                     link = link_tag.get('href')
                     
                     if link and text and len(text) > 10:
-                        # URL Fix
                         if not link.startswith('http'):
                             from urllib.parse import urljoin
                             link = urljoin(station['url'], link)
-                            
-                        items.append({'title': text, 'link': link, 'date': datetime.datetime.now().strftime("%d/%m/%Y")})
+                        
+                        # Στο HTML δεν ξέρουμε ακριβή ημερομηνία, βάζουμε τη σημερινή
+                        items.append({
+                            'title': text, 
+                            'link': link, 
+                            'date_obj': now,
+                            'date_str': now.strftime("%d/%m/%Y")
+                        })
                         count += 1
 
-            # --- ΕΠΕΞΕΡΓΑΣΙΑ & ΦΙΛΤΡΑΡΙΣΜΑ ---
+            # === ΚΕΝΤΡΙΚΟ ΦΙΛΤΡΑΡΙΣΜΑ ===
             for item in items:
-                title = item['title'].lower() # Μετατροπή σε μικρά για έλεγχο
+                title_lower = item['title'].lower()
                 link = item['link']
 
-                # 1. Βήμα: Έλεγχος Αρνητικών (Stop Words)
-                if any(bad in title for bad in negative_keywords): 
-                    continue # Είναι είδηση ή αποτελέσματα, πέτα το.
+                # Φίλτρο 1: Αρνητικές Λέξεις
+                if any(bad in title_lower for bad in negative_keywords): continue
 
-                # 2. Βήμα: Έλεγχος Θετικών (Must Have)
-                # Ειδική εξαίρεση: Αν το URL της πηγής έχει τη λέξη "diagonismoi", είμαστε πιο ελαστικοί
-                is_explicit_contest = any(good in title for good in required_keywords)
-                is_from_contest_feed = "diagonismoi" in station['url'] or "blog/diagonismoi" in station['url']
+                # Φίλτρο 2: Λέξεις κλειδιά (ή αν προέρχεται από feed διαγωνισμών)
+                is_contest_feed = "diagonismoi" in station['url'] or "blog/diagonismoi" in station['url']
+                has_keyword = any(good in title_lower for good in required_keywords)
 
-                if is_explicit_contest or (is_from_contest_feed and "νέα" not in title):
+                if has_keyword or (is_contest_feed and "νέα" not in title_lower):
                     
-                    # Αποφυγή διπλότυπων
+                    # Φίλτρο 3: Έλεγχος αν ο τίτλος έχει παλιά ημερομηνία (Regex)
+                    # Π.χ. Αν λέει "έως 20/12" και έχουμε 28/12, το πετάμε
+                    # (Αυτό είναι πολύπλοκο, οπότε βασιζόμαστε κυρίως στην ημερομηνία δημοσίευσης προς το παρόν)
+                    
                     if not any(d['link'] == link for d in all_contests):
                         all_contests.append({
-                            "title": item['title'], # Κρατάμε τον αρχικό τίτλο (με κεφαλαία)
+                            "title": item['title'],
                             "link": link,
                             "source_name": station['name'],
                             "live_url": station['live_url'],
                             "audience": station['audience'],
                             "schedule": station['schedule'],
-                            "found_at": item['date']
+                            "found_at": item['date_str']
                         })
 
         except Exception as e:
@@ -156,7 +183,7 @@ def scrape_contests():
     priority = {"low": 1, "medium": 2, "high": 3}
     all_contests.sort(key=lambda x: priority.get(x['audience'], 3))
 
-    print(f"Scan complete. Found {len(all_contests)} valid contests.")
+    print(f"Scan complete. Kept {len(all_contests)} fresh contests.")
     
     with open('contests.json', 'w', encoding='utf-8') as f:
         json.dump(all_contests, f, ensure_ascii=False, indent=4)
